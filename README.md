@@ -66,6 +66,3 @@ python evaluate_deepfool.py --checkpoint checkpoints/ckpt.pth
 - Kothapalli et al., Neural Collapse review and robustness modeling, 2023. \cite{kothapalli2023neuralcollapsereviewmodelling}
 - Nguyen et al., Memorization dynamics in two-class NC experiments, 2023. \cite{nguyen2023memorizationdilationmodelingneuralcollapse}
 
----
-
-If you'd like, I can (a) create an initial `requirements.txt` with suggested packages and pinned versions, (b) add example `train.py` and `evaluate_deepfool.py` stubs, or (c) wire CI/tests to reproduce the central experiments.
