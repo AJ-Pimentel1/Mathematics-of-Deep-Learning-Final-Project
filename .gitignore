@@ -10,7 +10,7 @@ data/
 *.tgz
 *.zip
 *.tar
-
+*.csv
 # -----------------------------
 # PyTorch & Model Checkpoints
 # -----------------------------

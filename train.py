@@ -1,22 +1,21 @@
 import os
 import glob
+import csv
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms
-from torchvision.models import resnet18
 from torch.utils.data import DataLoader, Subset
 import numpy as np
+
+# Import your custom NCResNet18 from your model_create.py file
 from model_create import *
 
-model_cifar = NCResNet18(dataset_name = 'cifar10')
-model_mnist = NCResNet18(dataset_name = 'mnist')
-model_fmnist = NCResNet18(dataset_name = 'fmnist')
-
-
+# ==========================================
+# 1. DATA LOADING & PREPROCESSING
+# ==========================================
 def get_balanced_dataset(dataset, samples_per_class=5000):
-    # Subsamples the dataset to 5,000 examples per class to perfectly balance it.
     targets = torch.tensor(dataset.targets)
     indices = []
     for class_id in range(10): 
@@ -27,11 +26,8 @@ def get_balanced_dataset(dataset, samples_per_class=5000):
     return Subset(dataset, indices)
 
 def load_data(dataset_name='mnist', batch_size=128):
-    # Point directly to your existing data folder
     dataset_path = './data'
     
-    # Pre-process images by subtracting the mean and dividing by the standard deviation.
-    # No data augmentation is used.
     if dataset_name == 'cifar10':
         transform = transforms.Compose([
             transforms.ToTensor(),
@@ -53,12 +49,13 @@ def load_data(dataset_name='mnist', batch_size=128):
         ])
         full_train = datasets.FashionMNIST(root=dataset_path, train=True, download=True, transform=transform)
 
-    # Subsample to 5,000 examples per class.
     balanced_train = get_balanced_dataset(full_train, samples_per_class=5000)
-    
     loader = DataLoader(balanced_train, batch_size=batch_size, shuffle=True, num_workers=2)
     return loader
 
+# ==========================================
+# 2. NEURAL COLLAPSE METRICS ENGINE
+# ==========================================
 @torch.no_grad()
 def compute_nc_metrics(model, dataloader, num_classes=10):
     model.eval()
@@ -92,7 +89,7 @@ def compute_nc_metrics(model, dataloader, num_classes=10):
         Sigma_W += torch.mm(H_c.T, H_c) / len(Y)
         
     Sigma_B = torch.mm(M_dot, M_dot.T) / num_classes
-    Sigma_B_pinv = torch.linalg.pinv(Sigma_B)
+    Sigma_B_pinv = torch.linalg.pinv(Sigma_B.cpu()).to(device)
     nc1_metric = torch.trace(torch.mm(Sigma_W, Sigma_B_pinv)).item() / num_classes
 
     # NC2: Convergence to Simplex ETF
@@ -120,64 +117,81 @@ def compute_nc_metrics(model, dataloader, num_classes=10):
 # 3. MAIN TRAINING LOOP
 # ==========================================
 def main():
-    # Configuration
-    DATASET = 'cifar10' # Change to 'mnist' or 'fmnist'
-    
-    # Training parameters based on the paper's optimization methodology
-    EPOCHS = 350 #
-    BATCH_SIZE = 128 #
+    # Loop over all three datasets
+    DATASETS = ['mnist', 'fmnist', 'cifar10']
+    EPOCHS = 350 
+    BATCH_SIZE = 128 
     INITIAL_LR = 0.05 
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Training on device: {device}")
 
-    # Initialization
-    train_loader = load_data(dataset_name=DATASET, batch_size=BATCH_SIZE)
-    model = NCResNet18(dataset_name=DATASET).to(device)
-    
-    criterion = nn.CrossEntropyLoss()
-    
-    # Optimizer settings from paper: SGD with momentum 0.9 and weight decay 5e-4.
-    optimizer = optim.SGD(model.parameters(), lr=INITIAL_LR, momentum=0.9, weight_decay=5e-4)
-    
-    # Learning rate drops by factor of 10 at 1/3 and 2/3 of epochs.
-    milestones = [int(EPOCHS * (1/3)), int(EPOCHS * (2/3))]
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
+    # Create a directory for outputs
+    os.makedirs('results', exist_ok=True)
 
-    print(f"Starting Training for {EPOCHS} Epochs...")
-    
-    for epoch in range(EPOCHS):
-        model.train()
-        running_loss = 0.0
-        correct = 0
-        total = 0
+    for dataset_name in DATASETS:
+        print(f"\n{'='*50}")
+        print(f"BEGINNING BASE MODEL TRAINING FOR: {dataset_name.upper()}")
+        print(f"{'='*50}")
+
+        train_loader = load_data(dataset_name=dataset_name, batch_size=BATCH_SIZE)
+        model = NCResNet18(dataset_name=dataset_name).to(device)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.SGD(model.parameters(), lr=INITIAL_LR, momentum=0.9, weight_decay=5e-4)
         
-        for inputs, targets in train_loader:
-            inputs, targets = inputs.to(device), targets.to(device)
-            
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item() * inputs.size(0)
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-            
-        scheduler.step()
+        milestones = [int(EPOCHS * (1/3)), int(EPOCHS * (2/3))]
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
+
+        # Setup CSV Logging
+        csv_filename = f"results/{dataset_name}_base_training_history.csv"
         
-        epoch_loss = running_loss / total
-        epoch_acc = 100. * correct / total
-        
-        # At the end of the epoch, compute NC metrics
-        nc1, nc2, nc3, nc4 = compute_nc_metrics(model, train_loader)
-        
-        print(f"Epoch [{epoch+1:03d}/{EPOCHS}] "
-              f"LR: {scheduler.get_last_lr()[0]:.4f} | "
-              f"Loss: {epoch_loss:.4f} | Acc: {epoch_acc:05.2f}% || "
-              f"NC1: {nc1:.4f} | NC2: {nc2:.4f} | NC3: {nc3:.4f} | NC4: {nc4:.4f}")
+        with open(csv_filename, mode='w', newline='') as csv_file:
+            csv_writer = csv.writer(csv_file)
+            csv_writer.writerow(['Epoch', 'LR', 'Loss', 'Accuracy', 'NC1', 'NC2', 'NC3', 'NC4'])
+
+            for epoch in range(EPOCHS):
+                model.train()
+                running_loss = 0.0
+                correct = 0
+                total = 0
+                
+                for inputs, targets in train_loader:
+                    inputs, targets = inputs.to(device), targets.to(device)
+                    
+                    optimizer.zero_grad()
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    loss.backward()
+                    optimizer.step()
+                    
+                    running_loss += loss.item() * inputs.size(0)
+                    _, predicted = outputs.max(1)
+                    total += targets.size(0)
+                    correct += predicted.eq(targets).sum().item()
+                    
+                scheduler.step()
+                
+                epoch_loss = running_loss / total
+                epoch_acc = 100. * correct / total
+                current_lr = scheduler.get_last_lr()[0]
+                
+                # Compute NC metrics
+                nc1, nc2, nc3, nc4 = compute_nc_metrics(model, train_loader)
+                
+                # Log to CSV
+                csv_writer.writerow([epoch+1, current_lr, epoch_loss, epoch_acc, nc1, nc2, nc3, nc4])
+                
+                print(f"Epoch [{epoch+1:03d}/{EPOCHS}] "
+                      f"LR: {current_lr:.4f} | Loss: {epoch_loss:.4f} | Acc: {epoch_acc:05.2f}% || "
+                      f"NC1: {nc1:.4f} | NC2: {nc2:.4f} | NC3: {nc3:.4f} | NC4: {nc4:.4f}")
+
+                # STOP TRAINING & SAVE MODEL ON 100% ACCURACY
+                if epoch_acc >= 100.0:
+                    model_save_path = f"results/{dataset_name}_100_acc_model.pt"
+                    torch.save(model.state_dict(), model_save_path)
+                    print(f">>> 100% Accuracy Reached for {dataset_name.upper()}! <<<")
+                    print(f">>> Saved base model to {model_save_path}. Moving to next dataset. <<<")
+                    break # Breaks out of the epoch loop and moves to the next dataset
 
 if __name__ == '__main__':
     main()
