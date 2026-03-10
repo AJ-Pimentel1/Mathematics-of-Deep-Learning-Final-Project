@@ -3,13 +3,13 @@
 ## Phase 1: Core Implementation & Baselines
 - [x] **March 2:** Base training script complete.
   - *Details:* Data loaders, ResNet18 architecture, and NC metrics engine (NC1, NC2, NC3, NC4) integrated and functional.
-- [ ] **March 5:** Base models trained to 100% accuracy.
+- [ x] **March 5:** Base models trained to 100% accuracy.
   - *Details:* Train 3 distinct random initializations for each of the 3 datasets (CIFAR-10, MNIST, Fashion-MNIST).
-- [ ] **March 10:** Adversarial robustness testing complete.
+- [ x] **March 10:** Adversarial robustness testing complete.
   - *Details:* Calculate minimal DeepFool perturbations at each phase leading up to Neural Collapse to replicate robustness findings.
 
 ## Phase 2: Memorization vs. Generalization
-- [ ] **March 21:** Dataset pipeline modified to shuffle labels on all datasets.
+- [ x] **March 21:** Dataset pipeline modified to shuffle labels on all datasets.
 - [ ] **March 22:** Training complete for the shuffled datasets.
   - *Details:* Pushing the overparameterized model to pure memorization to observe if geometric collapse still occurs identically.
 
