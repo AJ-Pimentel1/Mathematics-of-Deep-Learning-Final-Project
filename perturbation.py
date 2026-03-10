@@ -179,7 +179,7 @@ def save_adversarial_examples(model, dataloader, dataset_name, phase_name):
 # ==========================================
 # 3. EXPERIMENT WORKFLOW
 # ==========================================
-def run_tpt_experiment(dataset_name='mnist', extra_epochs=300, robustness_freq=25):
+def run_tpt_experiment(dataset_name='mnist', extra_epochs=300, robustness_freq=50):
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"\n{'='*50}")
     print(f"STARTING TPT EXPERIMENT FOR: {dataset_name.upper()}")
@@ -231,8 +231,9 @@ def run_tpt_experiment(dataset_name='mnist', extra_epochs=300, robustness_freq=2
                 current_rho = calculate_robustness_metric(model, train_loader, num_samples=250)
                 
             csv_writer.writerow([epoch+1, epoch_loss, nc1, nc2, nc3, nc4, current_rho])
-            print(f"TPT Epoch [{epoch+1:03d}/{extra_epochs}] Loss: {epoch_loss:.6f} | NC1: {nc1:.4f} | Rho_Adv: {current_rho:.6f}")
-
+            print(f"TPT Epoch [{epoch+1:03d}/{extra_epochs}] "
+                  f"Loss: {epoch_loss:.6f} | NC1: {nc1:.4f} | NC2: {nc2:.4f} | "
+                  f"NC3: {nc3:.4f} | NC4: {nc4:.4f} | Rho_Adv: {current_rho:.6f}")
     # --- PHASE 3: Final Measurements ---
     save_adversarial_examples(model, train_loader, dataset_name, "Fully_Collapsed")
     torch.save(model.state_dict(), f"results/{dataset_name}_collapsed_model.pt")
@@ -240,4 +241,4 @@ def run_tpt_experiment(dataset_name='mnist', extra_epochs=300, robustness_freq=2
 if __name__ == '__main__':
     DATASETS = ['mnist', 'fmnist', 'cifar10']
     for dataset in DATASETS:
-        run_tpt_experiment(dataset_name=dataset, extra_epochs=300, robustness_freq=50)
+        run_tpt_experiment(dataset_name=dataset, extra_epochs=300, robustness_freq=25)
